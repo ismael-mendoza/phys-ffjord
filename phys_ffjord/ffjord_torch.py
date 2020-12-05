@@ -2,6 +2,7 @@ from torchdyn.models import CNF, NeuralDE, Augmenter
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
 from torch.optim import AdamW
 from torch.distributions import MultivariateNormal
 
@@ -24,7 +25,6 @@ class Learner(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
-        self.iters = 0
         self.lr = lr
         self.weight_decay = weight_decay
 
@@ -37,7 +37,6 @@ class Learner(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        self.iters += 1
         x = batch[0]
         xtrJ = self.model(x)
 
@@ -54,14 +53,17 @@ class Learner(pl.LightningModule):
 
 
 class DataModule(pl.LightningDataModule):
-    def __init__(self, latents, batch_size):
+    def __init__(self, latents, batch_size=64):
         super().__init__()
-        self.data = latents
-        self.batch_size = batch_size
         assert latents.shape[1] == 8
+        self.batch_size = batch_size
+        self.dataset = TensorDataset(latents)
+
+    def train_dataloader(self, *args, **kwargs) -> DataLoader:
+        return DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True)
 
 
-def run_ffjord(
+def train(
     datamodule,
     device,
     weight_decay=1e-5,
@@ -85,7 +87,7 @@ def run_ffjord(
         nn.Softplus(),
         nn.Linear(64, 64),
         nn.Softplus(),
-        nn.Linear(64, 2),
+        nn.Linear(64, ddim),
     )
     cnf = CNF(f, trace_estimator=hutch_trace, noise_dist=noise_dist)
     nde = NeuralDE(
